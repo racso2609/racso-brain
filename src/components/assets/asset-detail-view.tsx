@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { MaintenanceStatusBadge } from "./maintenance-status-badge";
 import { RegisterUsageModal } from "./register-usage-modal";
 import { CreateOrderModal } from "./create-order-modal";
+import { CreatePlanModal } from "./create-plan-modal";
+import { PlanList } from "./plan-list";
 import {
   ArrowLeft,
   Truck,
@@ -53,6 +55,8 @@ export function AssetDetailView({ assetId }: { assetId: string }) {
 
   const [isUsageModalOpen, setIsUsageModalOpen] = useState(false);
   const [isOrderModalOpen, setIsOrderModalOpen] = useState(false);
+  const [isCreatePlanModalOpen, setIsCreatePlanModalOpen] = useState(false);
+  const [planListKey, setPlanListKey] = useState(0);
 
   const fetchData = useCallback(async () => {
     setIsLoading(true);
@@ -95,6 +99,7 @@ export function AssetDetailView({ assetId }: { assetId: string }) {
       });
       if (!res.ok) throw new Error("Error al completar la orden");
       fetchData();
+      setPlanListKey((k) => k + 1);
     } catch (err: any) {
       alert(err.message);
     }
@@ -112,6 +117,7 @@ export function AssetDetailView({ assetId }: { assetId: string }) {
       });
       if (!res.ok) throw new Error("Error al cancelar la orden");
       fetchData();
+      setPlanListKey((k) => k + 1);
     } catch (err: any) {
       alert(err.message);
     }
@@ -230,7 +236,18 @@ export function AssetDetailView({ assetId }: { assetId: string }) {
                 Semáforo de Mantenimiento Preventivo
               </h2>
             </div>
-            <MaintenanceStatusBadge status={health.overallStatus} />
+            <div className="flex items-center gap-2">
+              <MaintenanceStatusBadge status={health.overallStatus} />
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setIsCreatePlanModalOpen(true)}
+                className="gap-1.5 text-xs"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Crear plan
+              </Button>
+            </div>
           </div>
 
           {health.planResults.length === 0 ? (
@@ -304,6 +321,9 @@ export function AssetDetailView({ assetId }: { assetId: string }) {
           </div>
         </div>
       </div>
+
+      {/* Maintenance Plans */}
+      <PlanList key={planListKey} assetId={asset.id} onRefresh={fetchData} />
 
       {/* Maintenance Orders History */}
       <div className="p-6 rounded-2xl border border-border bg-card shadow-xs space-y-4">
@@ -392,6 +412,16 @@ export function AssetDetailView({ assetId }: { assetId: string }) {
         assetName={asset.name}
         onClose={() => setIsOrderModalOpen(false)}
         onSuccess={fetchData}
+      />
+
+      <CreatePlanModal
+        isOpen={isCreatePlanModalOpen}
+        assetId={asset.id}
+        onClose={() => setIsCreatePlanModalOpen(false)}
+        onSuccess={() => {
+          setPlanListKey((k) => k + 1);
+          fetchData();
+        }}
       />
     </div>
   );
