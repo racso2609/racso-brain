@@ -1,0 +1,53 @@
+# racso-brain — Cursor & Agent Operating Rules
+
+You are an AI assistant and software engineer working on **racso-brain**, a fullstack operational and financial management platform ("Second Brain" for assets, projects, and finance).
+
+The official technical stack is:
+- **Framework:** Next.js (App Router, Server Actions, TypeScript)
+- **Database & Auth:** PostgreSQL (Supabase) + Row Level Security (RLS)
+- **ORM & Migrations:** Drizzle ORM
+- **UI & Styling:** Tailwind CSS + shadcn/ui + Radix UI
+- **State & Data Fetching:** @tanstack/react-query + @tanstack/react-virtual
+
+---
+
+## 5 Mandatory Repository Rules (Non-Negotiable)
+
+### 1. Mandatory Consultation of `docs/` (Zero Assumptions)
+- **Never guess or assume requirements.** Always read relevant files in `docs/` before proposing technical designs, writing migrations, or generating code:
+  - [`docs/first-idea.md`](file:///Users/racso/work/racso/racso-brain/docs/first-idea.md) — Product vision, core problem statement, and goals.
+  - [`docs/roadmap-features.md`](file:///Users/racso/work/racso/racso-brain/docs/roadmap-features.md) — Detailed functional requirements for Features 1 to 4 and module dependencies.
+  - [`docs/technical-decisions.md`](file:///Users/racso/work/racso/racso-brain/docs/technical-decisions.md) — Architecture Decision Records (ADRs), DB schemas, and RLS policies.
+  - [`docs/rules.md`](file:///Users/racso/work/racso/racso-brain/docs/rules.md) — Full repository standards and development guidelines.
+
+### 2. Continuous Technical Decision Logging (ADRs)
+- Any architectural, database schema, infrastructure, or dependency decision must be formally documented in [`docs/technical-decisions.md`](file:///Users/racso/work/racso/racso-brain/docs/technical-decisions.md) following the ADR format (Title, Metadata, Context, Options, Rationale, Consequences).
+- Save key decisions into durable memory (e.g. Engram / `mem_save`) so future sessions retain the architectural context.
+
+### 3. Mandatory Paginated Lists with Infinite Scroll
+- **Unbounded queries (`SELECT *` without pagination) are strictly forbidden.**
+- Any endpoint, Server Action, or component returning collections of entities (assets, notes, ledger transactions, maintenance logs, etc.) must implement:
+  - **Backend:** Cursor-based pagination (`cursor`, `limit`, returning `{ items, nextCursor, hasMore }`). Keyset pagination on `(created_at, id)` is preferred over `OFFSET`.
+  - **Frontend:** Infinite Scroll experience using `@tanstack/react-query` (`useInfiniteQuery`) and `@tanstack/react-virtual` for high-density collections. No classic page-number pagination for primary operational lists.
+
+### 4. Extensibility by Design (Open-Closed Principle)
+- Design schemas, domain entities, and services open to extension, closed to breaking modifications:
+  - **Polymorphic Assets:** Use base columns + `custom_attributes JSONB` (GIN indexed) to support any asset type without schema migrations.
+  - **Decoupled Financial Ledger:** The core accounting ledger must not depend directly on operational tables. Operational modules (Assets, Projects, future modules) emit standardized transactional events into the ledger.
+  - **Multi-Tenant First:** Every new table must include `tenant_id` and have Supabase RLS policies enforced. Required audit fields: `created_at`, `updated_at`, `created_by`.
+
+### 5. Mandatory Test-Driven Development (TDD)
+- **Red-Green-Refactor Workflow:** Never write production code (services, endpoints, hooks, utilities, or complex components) without first writing an automated test that fails initially (Red), implementing the minimal code to make it pass (Green), and refactoring while keeping tests green (Refactor).
+- **Dual Coverage (Backend & Frontend):**
+  - *Backend:* Unit and integration tests for business rules, multi-tenant isolation (strict prevention of cross-tenant leakage), RBAC guards, atomic Ledger transactions, and cursor-based pagination contracts.
+  - *Frontend:* React Testing Library and mocks for critical components, forms, auth state, permission-based conditional rendering, and Infinite Scroll behavior.
+- **Zero Merges Without Tests:** Code changes lacking automated tests or failing the local test suite (`npm run test`) will not be approved or merged.
+
+---
+
+## Code Quality & Engineering Standards
+
+- **TypeScript Strictness:** Full type safety end-to-end; no `any` types. Infer Drizzle types directly from schemas.
+- **Server Actions & Mutations:** Validate input with `zod`. Verify active tenant and permissions on every mutation.
+- **Component Design:** Modular, accessible components using `shadcn/ui` primitives. Keep Server Components where possible; isolate client interactivity in dedicated client components.
+- **Verification:** Always run typecheck, build, and local test suite (`npm run test`) smoke checks after completing code changes.

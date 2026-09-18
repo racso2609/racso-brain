@@ -1,0 +1,71 @@
+import { describe, it, expect, vi } from "vitest";
+import { handleAuthCallback } from "@/lib/auth/callback";
+
+describe("Supabase SSR Auth Callback Route Handler (TC-FE-02, TC-FE-03, TC-BE-08)", () => {
+  it("exchanges code for session and redirects to next destination with active tenant cookie", async () => {
+    const mockExchangeCode = vi.fn().mockResolvedValue({
+      data: {
+        session: { user: { id: "user-123", email: "user@example.com" } },
+      },
+      error: null,
+    });
+
+    const mockSupabase = {
+      auth: {
+        exchangeCodeForSession: mockExchangeCode,
+      },
+    };
+
+    const mockFindUserDefaultTenant = vi.fn().mockResolvedValue("tenant-personal-456");
+
+    const request = new Request(
+      "http://localhost:3000/auth/callback?code=valid-pkce-code&next=/dashboard"
+    );
+
+    const response = await handleAuthCallback(
+      request,
+      mockSupabase as any,
+      mockFindUserDefaultTenant
+    );
+
+    expect(mockExchangeCode).toHaveBeenCalledWith("valid-pkce-code");
+    expect(mockFindUserDefaultTenant).toHaveBeenCalledWith("user-123");
+    expect(response.status).toBe(303); // Redirect
+    expect(response.headers.get("Location")).toBe("http://localhost:3000/dashboard");
+    expect(response.headers.get("Set-Cookie")).toContain("active_tenant_id=tenant-personal-456");
+  });
+
+  it("redirects to /login with error query if code exchange fails", async () => {
+    const mockExchangeCode = vi.fn().mockResolvedValue({
+      data: { session: null },
+      error: new Error("Invalid OAuth code"),
+    });
+
+    const mockSupabase = {
+      auth: {
+        exchangeCodeForSession: mockExchangeCode,
+      },
+    };
+
+    const request = new Request(
+      "http://localhost:3000/auth/callback?code=bad-code"
+    );
+
+    const response = await handleAuthCallback(
+      request,
+      mockSupabase as any,
+      vi.fn()
+    );
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get("Location")).toContain("/login?error=");
+  });
+
+  it("redirects to /login if code parameter is missing", async () => {
+    const request = new Request("http://localhost:3000/auth/callback");
+
+    const response = await handleAuthCallback(request, {} as any, vi.fn());
+    expect(response.status).toBe(303);
+    expect(response.headers.get("Location")).toContain("/login?error=missing_code");
+  });
+});
