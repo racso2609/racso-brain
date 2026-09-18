@@ -1,4 +1,7 @@
 import "@testing-library/jest-dom/vitest";
+import * as dotenv from "dotenv";
+dotenv.config({ path: ".env.local" });
+dotenv.config();
 
 // Mock IntersectionObserver for Infinite Scroll tests in jsdom
 class MockIntersectionObserver implements IntersectionObserver {

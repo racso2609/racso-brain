@@ -11,12 +11,25 @@ import {
   financialTxTypeValues,
   financialTxStatusValues,
 } from "./ledger";
+import {
+  assets,
+  assetUsageLogs,
+  maintenancePlans,
+  maintenanceOrders,
+  assetTypeValues,
+  assetStatusValues,
+  assetUsageMetricTypeValues,
+  maintenanceOrderTypeValues,
+  maintenanceOrderStatusValues,
+  maintenancePaymentTermsValues,
+} from "./assets";
 
 export * from "./auth";
 export * from "./tenancy";
 export * from "./roles";
 export * from "./audit";
 export * from "./ledger";
+export * from "./assets";
 
 // Zod Schemas
 export const insertUserSchema = createInsertSchema(users, {
@@ -61,3 +74,4 @@ export const insertFinancialTransactionSchema = createInsertSchema(financialTran
 });
 
 export const selectFinancialTransactionSchema = createSelectSchema(financialTransactions);
+

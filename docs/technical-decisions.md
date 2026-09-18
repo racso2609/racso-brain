@@ -475,3 +475,90 @@ racso-brain/
 2. **Configuración de Drizzle ORM:** Instalación de dependencias (`drizzle-orm`, `postgres`, `drizzle-kit`, `zod`), definición de `drizzle.config.ts` y conexión con Supabase.
 3. **Migración Inicial de Base de Datos:** Creación de tablas `tenants`, `users`, `tenant_memberships` y `financial_transactions`, así como el trigger de sincronización `handle_new_user()`.
 4. **Configuración de Supabase SSR:** Implementación de los adaptadores de cookies en `src/lib/supabase` y flujo de autenticación con Google OAuth.
+
+---
+
+# 🚜 ADR 002: Modelo Polimórfico de Activos, Telemetría Multivariable y Enlace Transaccional al Ledger
+
+| Metadato | Detalle |
+| :--- | :--- |
+| **Código ADR** | `ADR-002` |
+| **Título** | Modelo Polimórfico de Activos, Telemetría Multivariable y Enlace Transaccional al Ledger |
+| **Estado** | **Aprobado / Accepted** |
+| **Fecha** | 2026-09-17 |
+| **Decisores** | Equipo de Ingeniería y Producto de racso-brain |
+| **Documentos Relacionados** | [`docs/roadmap-features.md`](file:///Users/racso/work/racso/racso-brain/docs/roadmap-features.md), [SDD Feature 2](file:///Users/racso/work/racso/racso-brain/.agents/sdd/2026-09-17_feature_2_generic_assets_maintenance.md), `ADR-001` |
+
+---
+
+## 1. Contexto y Objetivos del Dominio de Activos
+
+La **Feature 2** aborda la gestión de cualquier objeto físico sujeto a desgaste y mantenimiento preventivo o correctivo:
+- **Vehículos (`VEHICLE`)**: Autos, camionetas y camiones medidos principalmente por odómetro (`ODOMETER_KM`) y calendario.
+- **Climatización (`HVAC`)**: Unidades centrales y mini-splits controlados por horas de operación (`HOURS_OPERATED`) y días calendario.
+- **Maquinaria Pesada (`HEAVY_MACHINERY`)**: Retroexcavadoras, generadores y montacargas monitoreados por horómetros de motor y ciclos de trabajo.
+- **Equipos Industriales y Herramientas (`EQUIPMENT`)**: Compresores, bombas y transformadores.
+- **Instalaciones e Inmuebles (`FACILITY`)**: Naves industriales, oficinas y bodegas sujetos a rutinas de inspección periódicas.
+
+Cada tipo de activo posee especificaciones técnicas disímiles (VIN, BTU, modelo de motor, voltaje, etc.), pero comparte idénticos ciclos de gobernanza operativa: registro telemático de uso, planes de mantenimiento preventivo, emisión de órdenes de trabajo e impacto financiero en el libro mayor.
+
+---
+
+## 2. Decisión de Arquitectura de Datos: Modelo Polimórfico Flexible
+
+Se evaluaron dos alternativas para modelar activos con diferentes atributos técnicos:
+1. **Table-per-Type (TPT):** Una tabla raíz `assets` y múltiples tablas hijas (`vehicles`, `hvac_units`, etc.) vinculadas por clave foránea.
+2. **Single Table con JSONB Indexado y Discriminador Zod (Seleccionada):** Una única tabla maestra `assets` que encapsula los atributos comunes y delega las especificaciones técnicas en la columna `custom_fields JSONB`, validada estrictamente en el backend mediante un discriminante polimórfico en tiempo de ejecución.
+
+### Justificación:
+- **Principio Abierto/Cerrado (Regla 4):** Agregar una nueva categoría de activo no requiere migraciones DDL estructurales destructivas ni sentencias `ALTER TABLE`.
+- **Rendimiento de Consulta:** Elimina la necesidad de `LEFT JOIN` hacia múltiples tablas hijas para listar inventarios heterogéneos.
+- **Integridad Garantizada:** Zod (`validateAssetCustomFields`) actúa como el gatekeeper infalible en la capa de servicios y Server Actions.
+
+---
+
+## 3. Telemetría Multivariable y Registro Inmutable de Uso
+
+La bitácora de telemetría (`asset_usage_logs`) registra lecturas acumuladas (no deltas instantáneos) para preservar la trazabilidad del odómetro/horómetro físico:
+- **Monotonicidad No Decreciente:** El servicio valida que cada nueva lectura sea mayor o igual al valor acumulado previo registrado para esa métrica, evitando errores tipográficos de operadores.
+- **Multi-métrica:** Un mismo activo puede registrar simultáneamente `HOURS_OPERATED` y `CALENDAR_DAYS` o `CYCLES`.
+- **Inmutabilidad:** Cada lectura es un evento histórico inmutable con marca de tiempo UTC y autor referenciado.
+
+---
+
+## 4. Motor Preventivo y Semáforos de Mantenimiento
+
+La evaluación de salud se calcula dinámicamente mediante `evaluateAssetMaintenanceHealth`:
+- Porcentaje de desgaste por métrica: $P_{\text{uso}} = \frac{\text{lectura actual} - \text{lectura en último servicio}}{\text{interval\_value}} \times 100$.
+- Porcentaje de desgaste por calendario: $P_{\text{tiempo}} = \frac{\text{días transcurridos}}{\text{interval\_days}} \times 100$.
+- El estado resultante corresponde a la métrica más crítica:
+  - $< 90\%$: `OK` (Verde).
+  - $90\% \le P < 100\%$: `DUE_SOON` (Ámbar / Próximo a Vencer).
+  - $\ge 100\%$: `OVERDUE` (Rojo / Vencido).
+
+---
+
+## 5. Enlace Transaccional Atómico con el Financial Ledger Engine
+
+Toda orden de mantenimiento con costo económico (`cost > 0`) se vincula directamente al libro contable bajo garantías ACID dentro de un bloque `db.transaction()`:
+- **Pago Inmediato (`IMMEDIATE`):** Se inserta en `financial_transactions` como `tx_type: 'EXPENSE'` y `status: 'COMMITTED'`.
+- **Condición de Crédito (`CREDIT_15_DAYS`, `CREDIT_30_DAYS`, `CREDIT_60_DAYS`):** Se inserta como `tx_type: 'PAYABLE'`, `status: 'PENDING_PAYMENT'`, calculando la fecha de vencimiento `due_date = service_date + N días`.
+- **Cancelación Operativa:** Si una orden con asiento contable asociado es cancelada, se ejecuta `voidLedgerTransaction`, preservando la inmutabilidad física y marcando el asiento contable como `VOIDED` con motivo y auditoría.
+
+---
+
+## 6. Paginación Keyset Cursor y UI Reactiva
+
+- Todas las consultas de listado implementan keyset pagination determinista `(created_at DESC, id DESC)` con serialización base64url.
+- La interfaz de usuario utiliza TanStack React Query (`useInfiniteQuery`) acoplada a un centinela `IntersectionObserver`, entregando una experiencia de Infinite Scroll fluida, sin saltos de página ni duplicación de datos.
+
+---
+
+## 7. Matriz de Consecuencias y Mitigaciones
+
+| Decisión | Ventajas | Retos | Mitigación |
+| :--- | :--- | :--- | :--- |
+| **JSONB para campos polimórficos** | Cero migraciones DDL al añadir categorías; consultas ultrarrápidas con índice GIN. | Riesgo de inconsistencia de esquema si se omiten validaciones. | Uso estricto de esquemas Zod discriminados en el API y Server Actions. |
+| **Enlace Ledger en `db.transaction()`** | Cero riesgo de órdenes huérfanas o descuadres contables; consistencia ACID total. | Bloqueos transaccionales si la transacción se prolonga. | Operaciones transaccionales hiper-optimizadas con inserción directa y registro de auditoría en memoria. |
+| **Monotonicidad de Telemetría** | Previene errores humanos y manipulaciones de kilometraje. | Reemplazos legítimos de odómetros o motores reseteados. | Flag administrativo `isMeterReplacement` debidamente justificado en las notas de auditoría. |
+
