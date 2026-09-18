@@ -17,7 +17,13 @@ import {
   createMaintenanceOrder,
   cancelMaintenanceOrder,
   completeMaintenanceOrder,
+  deleteMaintenanceOrder,
 } from "@/core/assets/services/maintenance-service";
+import {
+  listMaintenancePlans,
+  createMaintenancePlan,
+  updateMaintenancePlan,
+} from "@/core/assets/services/maintenance-plans-service";
 import { evaluateAssetMaintenanceHealth } from "@/core/assets/maintenance-rules";
 import { CursorPaginationParamsSchema } from "@/lib/pagination/cursor";
 import { db } from "@/db";
@@ -503,14 +509,14 @@ export async function handlePatchOrder(
       });
       return NextResponse.json(result);
     } else {
-      const order = await completeMaintenanceOrder({
+      const result = await completeMaintenanceOrder({
         tenantId: authResult.tenantId,
         orderId,
         usageAtService: parsed.usageAtService,
         partsReplaced: parsed.partsReplaced,
         userId: authResult.user.id,
       });
-      return NextResponse.json({ order });
+      return NextResponse.json(result);
     }
   } catch (error: unknown) {
     if (error instanceof z.ZodError) {
@@ -522,6 +528,178 @@ export async function handlePatchOrder(
     console.error(`API PATCH /api/assets/${assetId}/orders/${orderId} error:`, error);
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Error al actualizar el estado de la orden" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function handleDeleteOrder(
+  request: Request | NextRequest,
+  assetId: string,
+  orderId: string,
+  deps?: AssetRouteAuthDeps
+) {
+  try {
+    const authResult = await resolveAuthAndTenant("assets:write", deps);
+    if (authResult.errorResponse) return authResult.errorResponse;
+
+    const result = await deleteMaintenanceOrder({
+      tenantId: authResult.tenantId,
+      orderId,
+      userId: authResult.user.id,
+    });
+
+    return NextResponse.json({
+      message: "Orden de mantenimiento eliminada correctamente",
+      deletedOrderId: result.deletedOrderId,
+      deletedTransactionId: result.deletedTransactionId,
+    });
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "";
+    if (message.includes("not found")) {
+      return NextResponse.json(
+        { error: "Orden de mantenimiento no encontrada" },
+        { status: 404 }
+      );
+    }
+    console.error(`API DELETE /api/assets/${assetId}/orders/${orderId} error:`, error);
+    return NextResponse.json(
+      { error: message || "Error al eliminar la orden de mantenimiento" },
+      { status: 500 }
+    );
+  }
+}
+
+// ==========================================
+// 6. /api/assets/[id]/plans
+// ==========================================
+
+const createPlanBodySchema = z.object({
+  name: z.string().min(1),
+  description: z.string().nullable().optional(),
+  metricType: z.enum(["ODOMETER_KM", "HOURS_OPERATED", "CYCLES", "CALENDAR_DAYS"]),
+  intervalValue: z.union([z.string(), z.number()]),
+  intervalDays: z.number().int().positive().nullable().optional(),
+  alertThresholdPercentage: z.number().int().min(1).max(100).optional(),
+  baselineUsage: z.union([z.string(), z.number()]).nullable().optional(),
+  baselineDate: z.string().nullable().optional(),
+});
+
+const updatePlanBodySchema = z.object({
+  isActive: z.boolean().optional(),
+  intervalValue: z.union([z.string(), z.number()]).optional(),
+  baselineUsage: z.union([z.string(), z.number()]).nullable().optional(),
+  baselineDate: z.string().nullable().optional(),
+});
+
+export async function handleGetPlans(
+  request: Request | NextRequest,
+  assetId: string,
+  deps?: AssetRouteAuthDeps
+) {
+  try {
+    const authResult = await resolveAuthAndTenant("assets:read", deps);
+    if (authResult.errorResponse) return authResult.errorResponse;
+
+    const searchParams = new URL(request.url).searchParams;
+    const pagination = CursorPaginationParamsSchema.parse({
+      limit: searchParams.get("limit") || 10,
+      cursor: searchParams.get("cursor") || undefined,
+    });
+
+    const result = await listMaintenancePlans({
+      tenantId: authResult.tenantId,
+      assetId,
+      cursor: pagination.cursor,
+      limit: pagination.limit,
+    });
+
+    return NextResponse.json(result);
+  } catch (error: unknown) {
+    console.error(`API GET /api/assets/${assetId}/plans error:`, error);
+    return NextResponse.json(
+      { error: "Error al listar los planes de mantenimiento" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function handlePostPlan(
+  request: Request | NextRequest,
+  assetId: string,
+  deps?: AssetRouteAuthDeps
+) {
+  try {
+    const authResult = await resolveAuthAndTenant("assets:write", deps);
+    if (authResult.errorResponse) return authResult.errorResponse;
+
+    const body = await request.json();
+    const parsed = createPlanBodySchema.parse(body);
+
+    const plan = await createMaintenancePlan({
+      tenantId: authResult.tenantId,
+      assetId,
+      name: parsed.name,
+      description: parsed.description,
+      metricType: parsed.metricType,
+      intervalValue: parsed.intervalValue,
+      intervalDays: parsed.intervalDays,
+      alertThresholdPercentage: parsed.alertThresholdPercentage,
+      baselineUsage: parsed.baselineUsage,
+      baselineDate: parsed.baselineDate,
+      createdBy: authResult.user.id,
+    });
+
+    return NextResponse.json(plan, { status: 201 });
+  } catch (error: unknown) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: "Datos de validación inválidos", details: error.errors },
+        { status: 400 }
+      );
+    }
+    console.error(`API POST /api/assets/${assetId}/plans error:`, error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Error al crear el plan de mantenimiento" },
+      { status: 500 }
+    );
+  }
+}
+
+export async function handlePatchPlan(
+  request: Request | NextRequest,
+  assetId: string,
+  planId: string,
+  deps?: AssetRouteAuthDeps
+) {
+  try {
+    const authResult = await resolveAuthAndTenant("assets:write", deps);
+    if (authResult.errorResponse) return authResult.errorResponse;
+
+    const body = await request.json();
+    const parsed = updatePlanBodySchema.parse(body);
+
+    const updated = await updateMaintenancePlan({
+      tenantId: authResult.tenantId,
+      planId,
+      isActive: parsed.isActive,
+      intervalValue: parsed.intervalValue,
+      baselineUsage: parsed.baselineUsage,
+      baselineDate: parsed.baselineDate,
+      userId: authResult.user.id,
+    });
+
+    return NextResponse.json(updated);
+  } catch (error: unknown) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: "Datos de validación inválidos", details: error.errors },
+        { status: 400 }
+      );
+    }
+    console.error(`API PATCH /api/assets/${assetId}/plans/${planId} error:`, error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Error al actualizar el plan de mantenimiento" },
       { status: 500 }
     );
   }

@@ -147,6 +147,8 @@ export const maintenancePlans = pgTable(
     metricType: assetUsageMetricTypeEnum("metric_type").notNull(),
     intervalValue: numeric("interval_value", { precision: 14, scale: 2 }),
     intervalDays: integer("interval_days"),
+    baselineUsage: numeric("baseline_usage", { precision: 14, scale: 2 }),
+    baselineDate: timestamp("baseline_date", { withTimezone: true }),
     alertThresholdPercentage: integer("alert_threshold_percentage")
       .default(90)
       .notNull(),
@@ -197,6 +199,7 @@ export const maintenanceOrders = pgTable(
     serviceDate: date("service_date").defaultNow().notNull(),
     dueDate: date("due_date"),
     usageAtService: numeric("usage_at_service", { precision: 14, scale: 2 }),
+    dueUsage: numeric("due_usage", { precision: 14, scale: 2 }),
     partsReplaced: jsonb("parts_replaced")
       .$type<PartReplaced[]>()
       .default([])
@@ -256,8 +259,13 @@ export const insertMaintenancePlanSchema = createInsertSchema(maintenancePlans, 
   metricType: z.enum(assetUsageMetricTypeValues),
   alertThresholdPercentage: z.number().int().min(1).max(100).default(90),
   isActive: z.boolean().default(true),
+  baselineUsage: z.string().nullable().optional(),
+  baselineDate: z.date().nullable().optional(),
 });
-export const selectMaintenancePlanSchema = createSelectSchema(maintenancePlans);
+export const selectMaintenancePlanSchema = createSelectSchema(maintenancePlans, {
+  baselineUsage: z.string().nullable(),
+  baselineDate: z.date().nullable(),
+});
 
 export const insertMaintenanceOrderSchema = createInsertSchema(maintenanceOrders, {
   title: z.string().min(1, "Title is required"),

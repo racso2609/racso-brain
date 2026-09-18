@@ -141,6 +141,7 @@ describe("Maintenance Rules, Health Semaphores & Order Transitions (Task 2 TDD)"
   describe("validateOrderStateTransition", () => {
     it("allows valid transitions", () => {
       expect(validateOrderStateTransition("SCHEDULED", "IN_PROGRESS")).toBe(true);
+      expect(validateOrderStateTransition("SCHEDULED", "COMPLETED")).toBe(true);
       expect(validateOrderStateTransition("SCHEDULED", "CANCELLED")).toBe(true);
       expect(validateOrderStateTransition("IN_PROGRESS", "COMPLETED")).toBe(true);
       expect(validateOrderStateTransition("IN_PROGRESS", "CANCELLED")).toBe(true);
@@ -154,9 +155,6 @@ describe("Maintenance Rules, Health Semaphores & Order Transitions (Task 2 TDD)"
         InvalidOrderStateTransitionError
       );
       expect(() => validateOrderStateTransition("CANCELLED", "SCHEDULED")).toThrow(
-        InvalidOrderStateTransitionError
-      );
-      expect(() => validateOrderStateTransition("SCHEDULED", "COMPLETED")).toThrow(
         InvalidOrderStateTransitionError
       );
     });

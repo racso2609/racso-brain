@@ -2,6 +2,7 @@ import { db } from "@/db";
 import {
   assets,
   maintenanceOrders,
+  maintenancePlans,
   financialTransactions,
   insertMaintenanceOrderSchema,
   insertFinancialTransactionSchema,
@@ -23,6 +24,7 @@ import { encodeCursor, decodeCursor } from "@/lib/pagination/cursor";
 import type { PaginatedResult } from "@/lib/pagination/types";
 import { recordAuditLog } from "@/core/audit/service";
 import { validateStateTransition } from "@/core/ledger/types";
+import type { TransactionClient } from "@/core/tenancy/provisioning";
 
 export interface CreateMaintenanceOrderInput {
   tenantId: string;
@@ -188,6 +190,59 @@ export async function createMaintenanceOrder(
   });
 }
 
+async function voidFinancialTransaction(
+  tx: TransactionClient,
+  txId: string,
+  tenantId: string,
+  reason: string,
+  userId: string | null | undefined
+): Promise<FinancialTransaction | null> {
+  const [existingTx] = await tx
+    .select()
+    .from(financialTransactions)
+    .where(
+      and(
+        eq(financialTransactions.id, txId),
+        eq(financialTransactions.tenantId, tenantId)
+      )
+    );
+
+  if (!existingTx) return null;
+
+  if (existingTx.status === "VOIDED") return existingTx;
+
+  validateStateTransition(existingTx.status, "VOIDED");
+
+  const updatedMetadata = {
+    ...(existingTx.metadata as Record<string, unknown>),
+    voidReason: reason,
+    voidedAt: new Date().toISOString(),
+    voidedBy: userId ?? null,
+  };
+
+  const [txRow] = await tx
+    .update(financialTransactions)
+    .set({
+      status: "VOIDED",
+      metadata: updatedMetadata,
+      updatedAt: new Date(),
+    })
+    .where(eq(financialTransactions.id, existingTx.id))
+    .returning();
+
+  await recordAuditLog({
+    tenantId,
+    userId,
+    action: "VOID_TRANSACTION",
+    entityType: "financial_transaction",
+    entityId: txRow.id,
+    oldData: existingTx as unknown as Record<string, unknown>,
+    newData: txRow as unknown as Record<string, unknown>,
+  });
+
+  return txRow;
+}
+
 export interface CancelOrderParams {
   tenantId: string;
   orderId: string;
@@ -218,48 +273,13 @@ export async function cancelMaintenanceOrder(
     let voidedTx: FinancialTransaction | null = null;
 
     if (existing.financialTransactionId) {
-      const [existingTx] = await tx
-        .select()
-        .from(financialTransactions)
-        .where(
-          and(
-            eq(financialTransactions.id, existing.financialTransactionId),
-            eq(financialTransactions.tenantId, params.tenantId)
-          )
-        );
-
-      if (existingTx) {
-        validateStateTransition(existingTx.status, "VOIDED");
-
-        const updatedMetadata = {
-          ...(existingTx.metadata as Record<string, unknown>),
-          voidReason: params.reason,
-          voidedAt: new Date().toISOString(),
-          voidedBy: params.userId ?? null,
-        };
-
-        const [txRow] = await tx
-          .update(financialTransactions)
-          .set({
-            status: "VOIDED",
-            metadata: updatedMetadata,
-            updatedAt: new Date(),
-          })
-          .where(eq(financialTransactions.id, existingTx.id))
-          .returning();
-
-        voidedTx = txRow;
-
-        await recordAuditLog({
-          tenantId: params.tenantId,
-          userId: params.userId,
-          action: "VOID_TRANSACTION",
-          entityType: "financial_transaction",
-          entityId: txRow.id,
-          oldData: existingTx as unknown as Record<string, unknown>,
-          newData: txRow as unknown as Record<string, unknown>,
-        });
-      }
+      voidedTx = await voidFinancialTransaction(
+        tx,
+        existing.financialTransactionId,
+        params.tenantId,
+        params.reason,
+        params.userId
+      );
     }
 
     const [updatedOrder] = await tx
@@ -288,6 +308,68 @@ export async function cancelMaintenanceOrder(
   });
 }
 
+export interface DeleteOrderParams {
+  tenantId: string;
+  orderId: string;
+  userId?: string | null;
+}
+
+export async function deleteMaintenanceOrder(
+  params: DeleteOrderParams
+): Promise<{ deletedOrderId: string; deletedTransactionId: string | null }> {
+  return await db.transaction(async (tx) => {
+    // 1. Fetch order
+    const [existing] = await tx
+      .select()
+      .from(maintenanceOrders)
+      .where(
+        and(
+          eq(maintenanceOrders.id, params.orderId),
+          eq(maintenanceOrders.tenantId, params.tenantId)
+        )
+      );
+
+    if (!existing) {
+      throw new Error(`Maintenance order ${params.orderId} not found in this tenant`);
+    }
+
+    let deletedTxId: string | null = null;
+
+    // 2. If financialTransactionId exists, void it (delete cascades to voided tx)
+    if (existing.financialTransactionId) {
+      const voidedTx = await voidFinancialTransaction(
+        tx,
+        existing.financialTransactionId,
+        params.tenantId,
+        "Order deleted",
+        params.userId
+      );
+      deletedTxId = voidedTx ? voidedTx.id : null;
+    }
+
+    // 3. DELETE order (trigger auto-deletes voided tx)
+    await tx
+      .delete(maintenanceOrders)
+      .where(eq(maintenanceOrders.id, existing.id));
+
+    // 4. Audit log
+    await recordAuditLog({
+      tenantId: params.tenantId,
+      userId: params.userId,
+      action: "DELETE_MAINTENANCE_ORDER",
+      entityType: "maintenance_order",
+      entityId: existing.id,
+      oldData: existing as unknown as Record<string, unknown>,
+      newData: {} as unknown as Record<string, unknown>,
+    });
+
+    return {
+      deletedOrderId: existing.id,
+      deletedTransactionId: deletedTxId,
+    };
+  });
+}
+
 export interface CompleteOrderParams {
   tenantId: string;
   orderId: string;
@@ -298,7 +380,7 @@ export interface CompleteOrderParams {
 
 export async function completeMaintenanceOrder(
   params: CompleteOrderParams
-): Promise<MaintenanceOrder> {
+): Promise<{ order: MaintenanceOrder; nextOrder: MaintenanceOrder | null }> {
   return await db.transaction(async (tx) => {
     const [existing] = await tx
       .select()
@@ -330,6 +412,53 @@ export async function completeMaintenanceOrder(
       .where(eq(maintenanceOrders.id, existing.id))
       .returning();
 
+    // Auto-schedule next order if plan exists
+    let nextOrder: MaintenanceOrder | null = null;
+    if (existing.planId) {
+      const [plan] = await tx
+        .select()
+        .from(maintenancePlans)
+        .where(eq(maintenancePlans.id, existing.planId));
+
+      if (plan && plan.isActive && plan.intervalValue) {
+        const metricType = plan.metricType as string;
+        const isUsageBased = ["ODOMETER_KM", "HOURS_OPERATED", "CYCLES"].includes(metricType);
+
+        if (isUsageBased && updated.usageAtService) {
+          const currentUsage = parseFloat(updated.usageAtService);
+          const interval = parseFloat(plan.intervalValue);
+          const nextDueUsage = currentUsage + interval;
+
+          const [created] = await tx
+            .insert(maintenanceOrders)
+            .values({
+              tenantId: params.tenantId,
+              assetId: existing.assetId,
+              planId: plan.id,
+              orderType: "PREVENTIVE",
+              status: "SCHEDULED",
+              title: plan.name,
+              description: plan.description,
+              dueUsage: String(nextDueUsage),
+              createdBy: params.userId ?? null,
+            })
+            .returning();
+
+          nextOrder = created;
+        }
+
+        // Update plan baseline
+        await tx
+          .update(maintenancePlans)
+          .set({
+            baselineUsage: updated.usageAtService,
+            baselineDate: updated.completedAt,
+            updatedAt: new Date(),
+          })
+          .where(eq(maintenancePlans.id, plan.id));
+      }
+    }
+
     await recordAuditLog({
       tenantId: params.tenantId,
       userId: params.userId,
@@ -340,7 +469,7 @@ export async function completeMaintenanceOrder(
       newData: updated as unknown as Record<string, unknown>,
     });
 
-    return updated;
+    return { order: updated, nextOrder };
   });
 }
 

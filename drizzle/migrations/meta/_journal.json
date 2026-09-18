@@ -22,6 +22,20 @@
       "when": 1789689063000,
       "tag": "0002_generic_assets_maintenance",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1789689064000,
+      "tag": "0003_maintenance_plans_baseline_usage",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1789689065000,
+      "tag": "0004_delete_order_cascade_ledger",
+      "breakpoints": true
     }
   ]
 }

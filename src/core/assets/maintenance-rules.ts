@@ -18,7 +18,7 @@ const ALLOWED_ORDER_TRANSITIONS: Record<
   MaintenanceOrderStatus,
   readonly MaintenanceOrderStatus[]
 > = {
-  SCHEDULED: ["IN_PROGRESS", "CANCELLED"],
+  SCHEDULED: ["IN_PROGRESS", "COMPLETED", "CANCELLED"],
   IN_PROGRESS: ["COMPLETED", "CANCELLED"],
   COMPLETED: [],
   CANCELLED: [],
@@ -43,6 +43,8 @@ export interface PlanLike {
   intervalDays?: number | null;
   alertThresholdPercentage?: number | null;
   isActive?: boolean;
+  baselineUsage?: string | number | null;
+  baselineDate?: string | Date | null;
 }
 
 export interface PlanHealthResult {
@@ -168,14 +170,20 @@ export function evaluateAssetMaintenanceHealth(params: {
       ? typeof lastOrder.usageAtService === "string"
         ? parseFloat(lastOrder.usageAtService)
         : lastOrder.usageAtService
-      : null;
+      : plan.baselineUsage
+        ? typeof plan.baselineUsage === "string"
+          ? parseFloat(plan.baselineUsage)
+          : plan.baselineUsage
+        : null;
+
+    const lastServiceDate = lastOrder?.serviceDate ?? plan.baselineDate ?? null;
 
     return evaluatePlanHealth({
       plan,
       currentUsage: currentUsageVal,
       lastServiceUsage: lastUsage,
       currentDate,
-      lastServiceDate: lastOrder?.serviceDate ?? null,
+      lastServiceDate,
     });
   });
 
