@@ -24,7 +24,7 @@ export function LoginButton({ onSignIn }: LoginButtonProps) {
       const { error } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${origin}/auth/callback`,
+          redirectTo: `${origin}`,
         },
       });
 
