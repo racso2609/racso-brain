@@ -17,19 +17,49 @@ describe("Ledger Route Multi-Tenant & RBAC Protection (/api/ledger)", () => {
     expect(data.error).toBe("Unauthorized");
   });
 
-  it("returns 403 Forbidden when user belongs to no tenants", async () => {
+  it("returns 403 Forbidden when user belongs to no tenants and self-healing yields null", async () => {
     const request = new Request("http://localhost:3000/api/ledger");
 
     const response = await handleGetLedger(request, {
       getAuthUser: async () => ({ id: "user-no-tenants" }),
       getCookieTenantId: async () => undefined,
       getUserMemberships: async () => [],
+      ensureUserTenant: async () => null,
       fetchTransactions: vi.fn(),
     });
 
     expect(response.status).toBe(403);
     const data = await response.json();
     expect(data.error).toContain("No perteneces");
+  });
+
+  it("self-heals user with no memberships by provisioning default tenant and returning 200 OK", async () => {
+    const mockData = {
+      items: [],
+      nextCursor: null,
+      hasMore: false,
+    };
+    const mockFetch = vi.fn().mockResolvedValue(mockData);
+    const mockEnsureTenant = vi.fn().mockResolvedValue("tenant-self-healed-777");
+
+    const request = new Request("http://localhost:3000/api/ledger");
+
+    const response = await handleGetLedger(request, {
+      getAuthUser: async () => ({ id: "user-new-unprovisioned", email: "new@example.com" }),
+      getCookieTenantId: async () => undefined,
+      getUserMemberships: async () => [],
+      ensureUserTenant: mockEnsureTenant,
+      fetchTransactions: mockFetch,
+    });
+
+    expect(mockEnsureTenant).toHaveBeenCalledWith({
+      id: "user-new-unprovisioned",
+      email: "new@example.com",
+    });
+    expect(mockFetch).toHaveBeenCalledWith("tenant-self-healed-777", expect.any(Object));
+    expect(response.status).toBe(200);
+    const data = await response.json();
+    expect(data).toEqual(mockData);
   });
 
   it("returns 403 Forbidden when user attempts access with a foreign tenant cookie", async () => {

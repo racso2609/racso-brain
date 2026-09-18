@@ -1,24 +1,16 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { db } from "@/db";
-import { tenantMemberships } from "@/db/schema";
-import { eq } from "drizzle-orm";
 import { ACTIVE_TENANT_COOKIE } from "@/core/tenancy/context";
+import { ensureUserDefaultTenant, type ProvisionableUser } from "@/core/tenancy/provisioning";
 
-export async function findUserDefaultTenant(userId: string): Promise<string | null> {
+export async function findUserDefaultTenant(
+  userOrId: string | ProvisionableUser
+): Promise<string | null> {
   try {
-    const memberships = await db
-      .select({
-        tenantId: tenantMemberships.tenantId,
-        isDefault: tenantMemberships.isDefault,
-      })
-      .from(tenantMemberships)
-      .where(eq(tenantMemberships.userId, userId));
-
-    const defaultMembership = memberships.find((m) => m.isDefault);
-    return defaultMembership?.tenantId ?? memberships[0]?.tenantId ?? null;
+    const user = typeof userOrId === "string" ? { id: userOrId } : userOrId;
+    return await ensureUserDefaultTenant(user);
   } catch (error) {
-    console.error("Error finding default tenant for user:", error);
+    console.error("Error finding or provisioning default tenant for user:", error);
     return null;
   }
 }
@@ -26,7 +18,7 @@ export async function findUserDefaultTenant(userId: string): Promise<string | nu
 export async function handleAuthCallback(
   request: Request,
   supabaseClient?: ReturnType<typeof createClient> extends Promise<infer T> ? T : never,
-  getTenantFn: (userId: string) => Promise<string | null> = findUserDefaultTenant
+  getTenantFn: (user: ProvisionableUser) => Promise<string | null> = findUserDefaultTenant
 ) {
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get("code");
@@ -36,7 +28,10 @@ export async function handleAuthCallback(
 
   if (error) {
     const redirectUrl = new URL("/login", requestUrl.origin);
-    redirectUrl.searchParams.set("error", errorDescription || error);
+    redirectUrl.searchParams.set(errorDescription ? "error_description" : "error", errorDescription || error);
+    if (errorDescription && error) {
+      redirectUrl.searchParams.set("error", error);
+    }
     return NextResponse.redirect(redirectUrl, { status: 303 });
   }
 
@@ -62,7 +57,13 @@ export async function handleAuthCallback(
   const response = NextResponse.redirect(redirectUrl, { status: 303 });
 
   if (data.session.user) {
-    const defaultTenantId = await getTenantFn(data.session.user.id);
+    let defaultTenantId: string | null = null;
+    try {
+      defaultTenantId = await getTenantFn(data.session.user);
+    } catch (err) {
+      console.error("Error ensuring default tenant in auth callback:", err);
+    }
+
     if (defaultTenantId) {
       response.cookies.set(ACTIVE_TENANT_COOKIE, defaultTenantId, {
         path: "/",

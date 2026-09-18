@@ -8,6 +8,7 @@ import { db } from "@/db";
 import { tenantMemberships } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { CursorPaginationParamsSchema } from "@/lib/pagination/cursor";
+import { ensureUserDefaultTenant, type ProvisionableUser } from "@/core/tenancy/provisioning";
 
 export interface LedgerRouteDependencies {
   getAuthUser?: () => Promise<{ id: string; email?: string } | null>;
@@ -16,6 +17,7 @@ export interface LedgerRouteDependencies {
     userId: string
   ) => Promise<Array<{ tenantId: string; role: string; isDefault?: boolean }>>;
   fetchTransactions?: (tenantId: string, params: unknown) => Promise<unknown>;
+  ensureUserTenant?: (user: ProvisionableUser) => Promise<string | null>;
 }
 
 export async function handleGetLedger(
@@ -41,7 +43,7 @@ export async function handleGetLedger(
       ? await deps.getCookieTenantId()
       : (await cookies()).get(ACTIVE_TENANT_COOKIE)?.value;
 
-    const memberships = deps?.getUserMemberships
+    let memberships = deps?.getUserMemberships
       ? await deps.getUserMemberships(user.id)
       : await db
           .select({
@@ -53,10 +55,30 @@ export async function handleGetLedger(
           .where(eq(tenantMemberships.userId, user.id));
 
     if (!memberships || memberships.length === 0) {
-      return NextResponse.json(
-        { error: "No perteneces a ninguna organización o empresa" },
-        { status: 403 }
-      );
+      let provisionedTenantId: string | null = null;
+      try {
+        provisionedTenantId = deps?.ensureUserTenant
+          ? await deps.ensureUserTenant(user)
+          : await ensureUserDefaultTenant(user);
+      } catch (provisioningError) {
+        console.error("Self-healing provisioning error in ledger handler:", provisioningError);
+        provisionedTenantId = null;
+      }
+
+      if (provisionedTenantId) {
+        memberships = [
+          {
+            tenantId: provisionedTenantId,
+            role: "OWNER",
+            isDefault: true,
+          },
+        ];
+      } else {
+        return NextResponse.json(
+          { error: "No perteneces a ninguna organización o empresa" },
+          { status: 403 }
+        );
+      }
     }
 
     if (cookieTenantId) {
