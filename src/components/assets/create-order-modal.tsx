@@ -9,6 +9,7 @@ export interface CreateOrderModalProps {
   isOpen: boolean;
   assetId: string;
   assetName: string;
+  planId?: string;
   onClose: () => void;
   onSuccess?: () => void;
 }
@@ -17,6 +18,7 @@ export function CreateOrderModal({
   isOpen,
   assetId,
   assetName,
+  planId,
   onClose,
   onSuccess,
 }: CreateOrderModalProps) {
@@ -68,6 +70,7 @@ export function CreateOrderModal({
           invoiceNumber: invoiceNumber.trim() || null,
           serviceDate,
           usageAtService: usageAtService ? parseFloat(usageAtService) : null,
+          planId: planId || null,
         }),
       });
 

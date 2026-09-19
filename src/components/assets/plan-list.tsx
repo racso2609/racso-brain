@@ -3,12 +3,19 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { CreatePlanModal } from "./create-plan-modal";
+import { CreateOrderModal } from "./create-order-modal";
+import { EditPlanModal } from "./edit-plan-modal";
 import {
   ClipboardList,
   Plus,
   CalendarClock,
   AlertCircle,
   RefreshCw,
+  Pencil,
+  PlusCircle,
+  ToggleLeft,
+  ToggleRight,
+  Trash2,
 } from "lucide-react";
 
 export interface PlanListProps {
@@ -19,10 +26,12 @@ export interface PlanListProps {
 interface PlanItem {
   id: string;
   name: string;
+  description?: string | null;
   metricType: string;
   intervalValue: string | null;
   intervalDays: number | null;
   baselineUsage: string | null;
+  baselineDate?: string | null;
   isActive: boolean;
 }
 
@@ -69,6 +78,9 @@ export function PlanList({ assetId, onRefresh }: PlanListProps) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [editingPlan, setEditingPlan] = useState<PlanItem | null>(null);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [creatingOrderPlanId, setCreatingOrderPlanId] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     setIsLoading(true);
@@ -108,6 +120,54 @@ export function PlanList({ assetId, onRefresh }: PlanListProps) {
   const handleCreateSuccess = () => {
     fetchData();
     onRefresh?.();
+  };
+
+  const handleCreateOrderClick = (planId: string) => {
+    setCreatingOrderPlanId(planId);
+  };
+
+  const handleEditClick = (plan: PlanItem) => {
+    setEditingPlan(plan);
+    setIsEditOpen(true);
+  };
+
+  const handleEditClose = () => {
+    setIsEditOpen(false);
+    setEditingPlan(null);
+  };
+
+  const handleEditSuccess = () => {
+    fetchData();
+    onRefresh?.();
+  };
+
+  const handleToggleActive = async (planId: string, currentIsActive: boolean) => {
+    try {
+      const res = await fetch(`/api/assets/${assetId}/plans/${planId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: !currentIsActive }),
+      });
+      if (!res.ok) throw new Error("Error al actualizar el plan");
+      fetchData();
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
+  const handleDeleteClick = async (planId: string) => {
+    if (!confirm("¿Estás seguro de que deseas eliminar este plan?")) return;
+    try {
+      const res = await fetch(`/api/assets/${assetId}/plans/${planId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: false }),
+      });
+      if (!res.ok) throw new Error("Error al eliminar el plan");
+      fetchData();
+    } catch (err: any) {
+      alert(err.message);
+    }
   };
 
   if (isLoading) {
@@ -202,6 +262,45 @@ export function PlanList({ assetId, onRefresh }: PlanListProps) {
                     </span>
                   )}
                 </div>
+
+                <div className="pt-3 border-t border-border flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => handleEditClick(plan)}
+                    title="Editar"
+                    className="p-1.5 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleCreateOrderClick(plan.id)}
+                    title="Crear orden"
+                    className="p-1.5 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                  >
+                    <PlusCircle className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleActive(plan.id, plan.isActive)}
+                    title={plan.isActive ? "Desactivar" : "Activar"}
+                    className="p-1.5 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                  >
+                    {plan.isActive ? (
+                      <ToggleRight className="w-4 h-4 text-emerald-500" />
+                    ) : (
+                      <ToggleLeft className="w-4 h-4" />
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteClick(plan.id)}
+                    title="Eliminar"
+                    className="p-1.5 rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             );
           })}
@@ -213,6 +312,30 @@ export function PlanList({ assetId, onRefresh }: PlanListProps) {
         assetId={assetId}
         onClose={() => setIsCreateOpen(false)}
         onSuccess={handleCreateSuccess}
+      />
+
+      {editingPlan && (
+        <EditPlanModal
+          key={editingPlan.id}
+          isOpen={isEditOpen}
+          assetId={assetId}
+          plan={editingPlan}
+          onClose={handleEditClose}
+          onSuccess={handleEditSuccess}
+        />
+      )}
+
+      <CreateOrderModal
+        isOpen={creatingOrderPlanId !== null}
+        assetId={assetId}
+        assetName=""
+        planId={creatingOrderPlanId || undefined}
+        onClose={() => setCreatingOrderPlanId(null)}
+        onSuccess={() => {
+          setCreatingOrderPlanId(null);
+          fetchData();
+          onRefresh?.();
+        }}
       />
     </div>
   );
