@@ -81,6 +81,7 @@ export function PlanList({ assetId, onRefresh }: PlanListProps) {
   const [editingPlan, setEditingPlan] = useState<PlanItem | null>(null);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [creatingOrderPlanId, setCreatingOrderPlanId] = useState<string | null>(null);
+  const [creatingOrderPlanName, setCreatingOrderPlanName] = useState<string>("");
 
   const fetchData = useCallback(async () => {
     setIsLoading(true);
@@ -122,8 +123,9 @@ export function PlanList({ assetId, onRefresh }: PlanListProps) {
     onRefresh?.();
   };
 
-  const handleCreateOrderClick = (planId: string) => {
+  const handleCreateOrderClick = (planId: string, planName: string) => {
     setCreatingOrderPlanId(planId);
+    setCreatingOrderPlanName(planName);
   };
 
   const handleEditClick = (plan: PlanItem) => {
@@ -274,7 +276,7 @@ export function PlanList({ assetId, onRefresh }: PlanListProps) {
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleCreateOrderClick(plan.id)}
+                    onClick={() => handleCreateOrderClick(plan.id, plan.name)}
                     title="Crear orden"
                     className="p-1.5 rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
                   >
@@ -326,13 +328,19 @@ export function PlanList({ assetId, onRefresh }: PlanListProps) {
       )}
 
       <CreateOrderModal
+        key={creatingOrderPlanId || "no-plan"}
         isOpen={creatingOrderPlanId !== null}
         assetId={assetId}
         assetName=""
         planId={creatingOrderPlanId || undefined}
-        onClose={() => setCreatingOrderPlanId(null)}
+        planName={creatingOrderPlanName || undefined}
+        onClose={() => {
+          setCreatingOrderPlanId(null);
+          setCreatingOrderPlanName("");
+        }}
         onSuccess={() => {
           setCreatingOrderPlanId(null);
+          setCreatingOrderPlanName("");
           fetchData();
           onRefresh?.();
         }}

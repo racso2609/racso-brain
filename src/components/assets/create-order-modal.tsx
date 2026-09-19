@@ -11,6 +11,7 @@ export interface CreateOrderModalProps {
   assetId: string;
   assetName: string;
   planId?: string;
+  planName?: string;
   onClose: () => void;
   onSuccess?: () => void;
 }
@@ -20,11 +21,12 @@ export function CreateOrderModal({
   assetId,
   assetName,
   planId,
+  planName,
   onClose,
   onSuccess,
 }: CreateOrderModalProps) {
   const [orderType, setOrderType] = useState<MaintenanceOrderType>("PREVENTIVE");
-  const [title, setTitle] = useState("");
+  const [title, setTitle] = useState(planName || "");
   const [description, setDescription] = useState("");
   const [cost, setCost] = useState("0.00");
   const [currency, setCurrency] = useState("USD");
