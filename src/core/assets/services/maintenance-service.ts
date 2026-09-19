@@ -376,6 +376,7 @@ export interface CompleteOrderParams {
   usageAtService?: string | number | null;
   partsReplaced?: PartReplaced[];
   userId?: string | null;
+  autoSchedule?: boolean;
 }
 
 export async function completeMaintenanceOrder(
@@ -412,9 +413,9 @@ export async function completeMaintenanceOrder(
       .where(eq(maintenanceOrders.id, existing.id))
       .returning();
 
-    // Auto-schedule next order if plan exists
+    // Auto-schedule next order if plan exists AND autoSchedule is true
     let nextOrder: MaintenanceOrder | null = null;
-    if (existing.planId) {
+    if (params.autoSchedule !== false && existing.planId) {
       const [plan] = await tx
         .select()
         .from(maintenancePlans)

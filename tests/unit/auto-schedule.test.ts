@@ -193,6 +193,38 @@ describe("Auto-schedule next maintenance order on completion", () => {
     expect(selectChains).toHaveLength(1);
   });
 
+  it("does not create a next order when autoSchedule is false", async () => {
+    const existing = makeOrder({ status: "SCHEDULED" });
+    const updated = {
+      ...existing,
+      status: "COMPLETED",
+      completedAt: new Date(),
+      usageAtService: "5000.00",
+    };
+
+    const { tx, selectChains, insertChains } = buildTx({
+      selectResults: [[existing]],
+      updateResults: [[updated]],
+      insertResults: [],
+    });
+    dbMock.transaction.mockImplementation(async (cb: (t: unknown) => unknown) =>
+      cb(tx)
+    );
+
+    const result = await completeMaintenanceOrder({
+      tenantId: "tenant-1",
+      orderId: "order-1",
+      usageAtService: "5000.00",
+      userId: "user-1",
+      autoSchedule: false,
+    });
+
+    expect(result.nextOrder).toBeNull();
+    // No plan lookup or insert occurred — auto-schedule skipped entirely
+    expect(selectChains).toHaveLength(1);
+    expect(insertChains).toHaveLength(0);
+  });
+
   it("does not create a next order when the plan is inactive", async () => {
     const existing = makeOrder({ status: "SCHEDULED" });
     const updated = {

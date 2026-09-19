@@ -91,11 +91,12 @@ export function AssetDetailView({ assetId }: { assetId: string }) {
   }, [fetchData]);
 
   const handleCompleteOrder = async (orderId: string) => {
+    const autoSchedule = confirm("¿Generar próxima orden automáticamente?");
     try {
       const res = await fetch(`/api/assets/${assetId}/orders/${orderId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "COMPLETE" }),
+        body: JSON.stringify({ action: "COMPLETE", autoSchedule }),
       });
       if (!res.ok) throw new Error("Error al completar la orden");
       fetchData();

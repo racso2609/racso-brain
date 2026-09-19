@@ -101,4 +101,48 @@ describe("Auto-schedule next order (Integration)", () => {
     expect(updatedPlan.baselineUsage).toBe("2000.00");
     expect(updatedPlan.baselineDate).not.toBeNull();
   });
+
+  it("does not auto-schedule a next order when autoSchedule is false", async () => {
+    // 1. Create a plan with a usage baseline
+    const [plan] = await db
+      .insert(maintenancePlans)
+      .values({
+        tenantId: tenantB,
+        assetId: assetB,
+        name: "Cambio de aceite de motor",
+        metricType: "HOURS_OPERATED",
+        intervalValue: "250.00",
+        baselineUsage: "1000.00",
+        isActive: true,
+        createdBy: userB,
+      })
+      .returning();
+
+    // 2. Create an order linked to the plan
+    const [order] = await db
+      .insert(maintenanceOrders)
+      .values({
+        tenantId: tenantB,
+        assetId: assetB,
+        planId: plan.id,
+        orderType: "PREVENTIVE",
+        status: "SCHEDULED",
+        title: "Cambio de aceite de motor",
+        createdBy: userB,
+      })
+      .returning();
+
+    // 3. Complete the order with autoSchedule disabled
+    const result = await completeMaintenanceOrder({
+      tenantId: tenantB,
+      orderId: order.id,
+      usageAtService: "1250.00",
+      userId: userB,
+      autoSchedule: false,
+    });
+
+    // 4. Order completed, but no next order generated
+    expect(result.order.status).toBe("COMPLETED");
+    expect(result.nextOrder).toBeNull();
+  });
 });
