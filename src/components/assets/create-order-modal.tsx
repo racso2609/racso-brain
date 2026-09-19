@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { InfoPopover } from "@/components/ui/info-popover";
 import { X, Wrench, AlertCircle, Loader2, DollarSign } from "lucide-react";
 import type { MaintenanceOrderType, MaintenancePaymentTerms } from "@/core/assets/types";
 
@@ -211,8 +212,9 @@ export function CreateOrderModal({
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-foreground mb-1">
+                <label className="flex items-center gap-1.5 text-xs font-medium text-foreground mb-1">
                   Términos de Pago
+                  <InfoPopover content="Define cuándo se registra el gasto contable. 'Inmediato' genera un gasto directo. 'Crédito X días' genera una cuenta por pagar con vencimiento futuro." />
                 </label>
                 <select
                   data-testid="select-payment-terms"
@@ -260,8 +262,9 @@ export function CreateOrderModal({
           </div>
 
           <div>
-            <label className="block text-xs font-semibold text-foreground mb-1">
+            <label className="flex items-center gap-1.5 text-xs font-semibold text-foreground mb-1">
               Lectura de Desgaste al Servicio (km / hrs)
+              <InfoPopover content="Registra el kilometraje u horas de uso del activo al momento del servicio. Este valor se usa para calcular el desgaste acumulado y programar el próximo mantenimiento." />
             </label>
             <input
               type="number"

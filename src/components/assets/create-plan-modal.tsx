@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { InfoPopover } from "@/components/ui/info-popover";
 import { X, ClipboardList, AlertCircle, Loader2, Sparkles } from "lucide-react";
 import type { AssetUsageMetricType } from "@/core/assets/types";
 
@@ -159,8 +160,9 @@ export function CreatePlanModal({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-foreground mb-1">
+              <label className="flex items-center gap-1.5 text-xs font-semibold text-foreground mb-1">
                 Métrica de Desgaste
+                <InfoPopover content="Unidad de medida para calcular cuándo toca el próximo mantenimiento. Kilometraje para vehículos, horas para maquinaria, ciclos para equipos industriales, o días calendario para mantenimiento periódico." />
               </label>
               <select
                 data-testid="select-plan-metric"
@@ -177,8 +179,9 @@ export function CreatePlanModal({
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-foreground mb-1">
+              <label className="flex items-center gap-1.5 text-xs font-semibold text-foreground mb-1">
                 Intervalo *
+                <InfoPopover content="Cada cuántas unidades de la métrica elegida se debe realizar el mantenimiento. Ejemplo: si métrica es Kilometraje e intervalo es 10000, el mantenimiento se programará cada 10,000 km." />
               </label>
               <input
                 type="number"
@@ -196,8 +199,9 @@ export function CreatePlanModal({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs font-semibold text-foreground mb-1">
+              <label className="flex items-center gap-1.5 text-xs font-semibold text-foreground mb-1">
                 Uso Base (opcional)
+                <InfoPopover content="Lectura actual del activo (km, horas, ciclos). Opcional: si se proporciona, el sistema calculará automáticamente cuándo vence el próximo mantenimiento según el intervalo." />
               </label>
               <input
                 type="number"
@@ -212,8 +216,9 @@ export function CreatePlanModal({
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-foreground mb-1">
+              <label className="flex items-center gap-1.5 text-xs font-semibold text-foreground mb-1">
                 Fecha Base (opcional)
+                <InfoPopover content="Fecha del último mantenimiento realizado. Opcional: útil para métricas basadas en tiempo (días calendario) o como referencia adicional." />
               </label>
               <input
                 type="date"
