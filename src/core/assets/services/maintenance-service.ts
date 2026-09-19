@@ -174,6 +174,40 @@ export async function createMaintenanceOrder(
       });
     }
 
+    // 4. If the order is created from a plan with a service reading,
+    // reset the plan baseline so the health semaphore restarts from here.
+    if (input.planId && input.usageAtService) {
+      const [planRow] = await tx
+        .select()
+        .from(maintenancePlans)
+        .where(and(eq(maintenancePlans.id, input.planId), eq(maintenancePlans.tenantId, input.tenantId)));
+
+      if (planRow) {
+        const usageAtServiceStr = String(input.usageAtService);
+        const baselineDate = new Date(serviceDateStr + "T00:00:00Z");
+
+        const [updatedPlan] = await tx
+          .update(maintenancePlans)
+          .set({
+            baselineUsage: usageAtServiceStr,
+            baselineDate,
+            updatedAt: new Date(),
+          })
+          .where(eq(maintenancePlans.id, planRow.id))
+          .returning();
+
+        await recordAuditLog({
+          tenantId: input.tenantId,
+          userId: input.createdBy,
+          action: "UPDATE_MAINTENANCE_PLAN",
+          entityType: "maintenance_plan",
+          entityId: planRow.id,
+          oldData: planRow as unknown as Record<string, unknown>,
+          newData: updatedPlan as unknown as Record<string, unknown>,
+        });
+      }
+    }
+
     await recordAuditLog({
       tenantId: input.tenantId,
       userId: input.createdBy,
@@ -376,12 +410,11 @@ export interface CompleteOrderParams {
   usageAtService?: string | number | null;
   partsReplaced?: PartReplaced[];
   userId?: string | null;
-  autoSchedule?: boolean;
 }
 
 export async function completeMaintenanceOrder(
   params: CompleteOrderParams
-): Promise<{ order: MaintenanceOrder; nextOrder: MaintenanceOrder | null }> {
+): Promise<{ order: MaintenanceOrder }> {
   return await db.transaction(async (tx) => {
     const [existing] = await tx
       .select()
@@ -413,53 +446,6 @@ export async function completeMaintenanceOrder(
       .where(eq(maintenanceOrders.id, existing.id))
       .returning();
 
-    // Auto-schedule next order if plan exists AND autoSchedule is true
-    let nextOrder: MaintenanceOrder | null = null;
-    if (params.autoSchedule !== false && existing.planId) {
-      const [plan] = await tx
-        .select()
-        .from(maintenancePlans)
-        .where(eq(maintenancePlans.id, existing.planId));
-
-      if (plan && plan.isActive && plan.intervalValue) {
-        const metricType = plan.metricType as string;
-        const isUsageBased = ["ODOMETER_KM", "HOURS_OPERATED", "CYCLES"].includes(metricType);
-
-        if (isUsageBased && updated.usageAtService) {
-          const currentUsage = parseFloat(updated.usageAtService);
-          const interval = parseFloat(plan.intervalValue);
-          const nextDueUsage = currentUsage + interval;
-
-          const [created] = await tx
-            .insert(maintenanceOrders)
-            .values({
-              tenantId: params.tenantId,
-              assetId: existing.assetId,
-              planId: plan.id,
-              orderType: "PREVENTIVE",
-              status: "SCHEDULED",
-              title: plan.name,
-              description: plan.description,
-              dueUsage: String(nextDueUsage),
-              createdBy: params.userId ?? null,
-            })
-            .returning();
-
-          nextOrder = created;
-        }
-
-        // Update plan baseline
-        await tx
-          .update(maintenancePlans)
-          .set({
-            baselineUsage: updated.usageAtService,
-            baselineDate: updated.completedAt,
-            updatedAt: new Date(),
-          })
-          .where(eq(maintenancePlans.id, plan.id));
-      }
-    }
-
     await recordAuditLog({
       tenantId: params.tenantId,
       userId: params.userId,
@@ -470,7 +456,7 @@ export async function completeMaintenanceOrder(
       newData: updated as unknown as Record<string, unknown>,
     });
 
-    return { order: updated, nextOrder };
+    return { order: updated };
   });
 }
 

@@ -480,7 +480,6 @@ const patchOrderBodySchema = z.discriminatedUnion("action", [
         })
       )
       .optional(),
-    autoSchedule: z.boolean().optional().default(true),
   }),
   z.object({
     action: z.literal("CANCEL"),
@@ -516,7 +515,6 @@ export async function handlePatchOrder(
         usageAtService: parsed.usageAtService,
         partsReplaced: parsed.partsReplaced,
         userId: authResult.user.id,
-        autoSchedule: parsed.autoSchedule,
       });
       return NextResponse.json(result);
     }

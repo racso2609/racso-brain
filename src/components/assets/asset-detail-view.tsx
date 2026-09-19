@@ -24,6 +24,7 @@ import {
   DollarSign,
   Plus,
   RefreshCw,
+  Trash2,
 } from "lucide-react";
 import type { AssetOverallHealthResult } from "@/core/assets/maintenance-rules";
 import type { AssetUsageMetricType } from "@/core/assets/types";
@@ -91,12 +92,11 @@ export function AssetDetailView({ assetId }: { assetId: string }) {
   }, [fetchData]);
 
   const handleCompleteOrder = async (orderId: string) => {
-    const autoSchedule = confirm("¿Generar próxima orden automáticamente?");
     try {
       const res = await fetch(`/api/assets/${assetId}/orders/${orderId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "COMPLETE", autoSchedule }),
+        body: JSON.stringify({ action: "COMPLETE" }),
       });
       if (!res.ok) throw new Error("Error al completar la orden");
       fetchData();
@@ -117,6 +117,21 @@ export function AssetDetailView({ assetId }: { assetId: string }) {
         body: JSON.stringify({ action: "CANCEL", reason: reason.trim() }),
       });
       if (!res.ok) throw new Error("Error al cancelar la orden");
+      fetchData();
+      setPlanListKey((k) => k + 1);
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
+  const handleDeleteOrder = async (orderId: string) => {
+    if (!confirm("¿Eliminar esta orden? Se eliminará también su registro contable si existe.")) return;
+
+    try {
+      const res = await fetch(`/api/assets/${assetId}/orders/${orderId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Error al eliminar la orden");
       fetchData();
       setPlanListKey((k) => k + 1);
     } catch (err: any) {
@@ -391,6 +406,16 @@ export function AssetDetailView({ assetId }: { assetId: string }) {
                       </Button>
                     </div>
                   )}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-xs h-7 px-2 text-destructive hover:bg-destructive/10"
+                    onClick={() => handleDeleteOrder(ord.id)}
+                    title="Eliminar orden"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Eliminar
+                  </Button>
                 </div>
               </div>
             ))}

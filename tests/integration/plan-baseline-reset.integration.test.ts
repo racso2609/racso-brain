@@ -1,16 +1,18 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { completeMaintenanceOrder } from "@/core/assets/services/maintenance-service";
+import {
+  createMaintenanceOrder,
+  completeMaintenanceOrder,
+} from "@/core/assets/services/maintenance-service";
 import { db } from "@/db";
 import {
   tenants,
   users,
   assets,
   maintenancePlans,
-  maintenanceOrders,
 } from "@/db/schema";
 import { eq } from "drizzle-orm";
 
-describe("Auto-schedule next order (Integration)", () => {
+describe("Plan baseline reset on order creation (Integration)", () => {
   const tenantB = "4fa85f64-5717-4562-b3fc-2c963f66afb6";
   const userB = "4fa85f64-5717-4562-b3fc-2c963f66af11";
   const assetB = "4fa85f64-5717-4562-b3fc-2c963f66afb8";
@@ -20,8 +22,8 @@ describe("Auto-schedule next order (Integration)", () => {
       .insert(tenants)
       .values({
         id: tenantB,
-        name: "Tenant Test AutoSchedule",
-        slug: "tenant-test-autoschedule-slug",
+        name: "Tenant Test PlazoBaseline",
+        slug: "tenant-test-baseline-slug",
       })
       .onConflictDoNothing();
 
@@ -29,8 +31,8 @@ describe("Auto-schedule next order (Integration)", () => {
       .insert(users)
       .values({
         id: userB,
-        email: "user-autoschedule-test@example.com",
-        fullName: "Test User AutoSchedule",
+        email: "user-baseline-test@example.com",
+        fullName: "Test User Baseline",
       })
       .onConflictDoNothing();
 
@@ -39,7 +41,7 @@ describe("Auto-schedule next order (Integration)", () => {
       .values({
         id: assetB,
         tenantId: tenantB,
-        name: "Montacargas AutoSchedule",
+        name: "Montacargas Baseline",
         type: "HEAVY_MACHINERY",
         status: "OPERATIONAL",
         customFields: { engineModel: "E-2000" },
@@ -48,7 +50,7 @@ describe("Auto-schedule next order (Integration)", () => {
       .onConflictDoNothing();
   });
 
-  it("completes an order and auto-schedules the next one with updated plan baseline", async () => {
+  it("creates an order linked to a plan with a service reading and resets the plan baseline", async () => {
     // 1. Create a plan with a usage baseline
     const [plan] = await db
       .insert(maintenancePlans)
@@ -64,35 +66,21 @@ describe("Auto-schedule next order (Integration)", () => {
       })
       .returning();
 
-    // 2. Create an order linked to the plan
-    const [order] = await db
-      .insert(maintenanceOrders)
-      .values({
-        tenantId: tenantB,
-        assetId: assetB,
-        planId: plan.id,
-        orderType: "PREVENTIVE",
-        status: "SCHEDULED",
-        title: "Cambio de filtro hidráulico",
-        createdBy: userB,
-      })
-      .returning();
-
-    // 3. Complete the order with a usage reading
-    const result = await completeMaintenanceOrder({
+    // 2. Create an order manually linked to the plan, with the service reading
+    const result = await createMaintenanceOrder({
       tenantId: tenantB,
-      orderId: order.id,
+      assetId: assetB,
+      planId: plan.id,
+      orderType: "PREVENTIVE",
+      title: "Cambio de filtro hidráulico",
       usageAtService: "2000.00",
-      userId: userB,
+      serviceDate: "2026-09-18",
+      createdBy: userB,
     });
 
-    // 4. A next order must exist with dueUsage = usageAtService + interval
-    expect(result.order.status).toBe("COMPLETED");
-    expect(result.nextOrder).not.toBeNull();
-    expect(result.nextOrder?.planId).toBe(plan.id);
-    expect(parseFloat(result.nextOrder!.dueUsage!)).toBeCloseTo(2500);
+    expect(result.order.status).toBe("SCHEDULED");
 
-    // 5. The plan baseline was updated to the completion usage
+    // 3. The plan baseline was moved forward to the service reading
     const [updatedPlan] = await db
       .select()
       .from(maintenancePlans)
@@ -102,7 +90,7 @@ describe("Auto-schedule next order (Integration)", () => {
     expect(updatedPlan.baselineDate).not.toBeNull();
   });
 
-  it("does not auto-schedule a next order when autoSchedule is false", async () => {
+  it("completing an order does NOT create a next order automatically", async () => {
     // 1. Create a plan with a usage baseline
     const [plan] = await db
       .insert(maintenancePlans)
@@ -119,30 +107,27 @@ describe("Auto-schedule next order (Integration)", () => {
       .returning();
 
     // 2. Create an order linked to the plan
-    const [order] = await db
-      .insert(maintenanceOrders)
-      .values({
-        tenantId: tenantB,
-        assetId: assetB,
-        planId: plan.id,
-        orderType: "PREVENTIVE",
-        status: "SCHEDULED",
-        title: "Cambio de aceite de motor",
-        createdBy: userB,
-      })
-      .returning();
-
-    // 3. Complete the order with autoSchedule disabled
-    const result = await completeMaintenanceOrder({
+    const created = await createMaintenanceOrder({
       tenantId: tenantB,
-      orderId: order.id,
-      usageAtService: "1250.00",
-      userId: userB,
-      autoSchedule: false,
+      assetId: assetB,
+      planId: plan.id,
+      orderType: "PREVENTIVE",
+      title: "Cambio de aceite de motor",
+      createdBy: userB,
     });
 
-    // 4. Order completed, but no next order generated
+    // 3. Complete the order with a usage reading
+    const result = await completeMaintenanceOrder({
+      tenantId: tenantB,
+      orderId: created.order.id,
+      usageAtService: "1250.00",
+      userId: userB,
+    });
+
     expect(result.order.status).toBe("COMPLETED");
-    expect(result.nextOrder).toBeNull();
+
+    // 4. No next order was auto-generated; irrelevant extra orders (if any)
+    // must be absent — completion only flips status.
+    expect(result).not.toHaveProperty("nextOrder");
   });
 });
