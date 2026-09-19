@@ -80,8 +80,11 @@ export function PlanList({ assetId, onRefresh }: PlanListProps) {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingPlan, setEditingPlan] = useState<PlanItem | null>(null);
   const [isEditOpen, setIsEditOpen] = useState(false);
-  const [creatingOrderPlanId, setCreatingOrderPlanId] = useState<string | null>(null);
-  const [creatingOrderPlanName, setCreatingOrderPlanName] = useState<string>("");
+  const [creatingOrderPlanId, setCreatingOrderPlanId] = useState<string | null>(
+    null,
+  );
+  const [creatingOrderPlanName, setCreatingOrderPlanName] =
+    useState<string>("");
 
   const fetchData = useCallback(async () => {
     setIsLoading(true);
@@ -143,7 +146,10 @@ export function PlanList({ assetId, onRefresh }: PlanListProps) {
     onRefresh?.();
   };
 
-  const handleToggleActive = async (planId: string, currentIsActive: boolean) => {
+  const handleToggleActive = async (
+    planId: string,
+    currentIsActive: boolean,
+  ) => {
     try {
       const res = await fetch(`/api/assets/${assetId}/plans/${planId}`, {
         method: "PATCH",
@@ -192,7 +198,9 @@ export function PlanList({ assetId, onRefresh }: PlanListProps) {
           <h2 className="text-sm font-bold text-foreground">
             Planes de Mantenimiento Preventivo
           </h2>
-          <span className="text-xs text-muted-foreground">{plans.length} plan(es)</span>
+          <span className="text-xs text-muted-foreground">
+            {plans.length} plan(es)
+          </span>
         </div>
         <Button
           size="sm"
@@ -208,7 +216,12 @@ export function PlanList({ assetId, onRefresh }: PlanListProps) {
         <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-xs flex items-center gap-2">
           <AlertCircle className="w-4 h-4 shrink-0" />
           <span>{error}</span>
-          <Button variant="outline" size="sm" onClick={fetchData} className="ml-auto gap-1.5">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={fetchData}
+            className="ml-auto gap-1.5"
+          >
             <RefreshCw className="w-3 h-3" /> Reintentar
           </Button>
         </div>
@@ -234,8 +247,8 @@ export function PlanList({ assetId, onRefresh }: PlanListProps) {
                       {plan.name}
                     </span>
                     <span className="text-[11px] text-muted-foreground block">
-                      {metricLabel(plan.metricType)} · cada {formatUsage(plan.intervalValue)}{" "}
-                      {unit}
+                      {metricLabel(plan.metricType)} · cada{" "}
+                      {formatUsage(plan.intervalValue)} {unit}
                     </span>
                   </div>
                   {plan.isActive ? (
@@ -293,14 +306,6 @@ export function PlanList({ assetId, onRefresh }: PlanListProps) {
                     ) : (
                       <ToggleLeft className="w-4 h-4" />
                     )}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteClick(plan.id)}
-                    title="Eliminar"
-                    className="p-1.5 rounded-lg text-muted-foreground hover:bg-destructive/10 hover:text-destructive transition-colors"
-                  >
-                    <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
               </div>
